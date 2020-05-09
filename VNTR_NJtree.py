@@ -5,21 +5,38 @@ Created on Mon Apr 27 22:39:15 2020
 @author: pldesgagne
 
 Description:
-    Blah # TODO
+    Construct a Neighbor-Joining tree with VNTR data.
+
+    Load VNTR data from a excel file.
+    Scan and display information about the VNTR data.
+    Calculate the genetic distance with either the Nei's distance formula
+    or the Cavalli-Sforza chord distance formula.
+    Saves a Neighbor-Joining tree that can be opened with a tree viewing
+    program such as MEGA.
+
+    The excel data should be formated as: (first line is ignored)
+        Name    Locus   Allele # headers are ignored
+        sample1 loci1   allele1
+        sample1 loci2   allele1
+        sample1 loci2   allele2
+        sample2 loci1   allele1
 """
-# TODO add pandas and tkinter in UML diag
+
 import pandas as pd
 import tkinter as tk
 from tkinter import filedialog
-# from Bio import Phylo as phy
+import math
+from Bio.Phylo.TreeConstruction import DistanceTreeConstructor
+from Bio.Phylo.TreeConstruction import DistanceMatrix
+from Bio.Phylo import write
 
 # Initialise tkinter to enable the uses of filedialog
 root = tk.Tk()
 root.withdraw()  # Prevent a empty window to be opened
 
 # Title and icon for eventual GUI
-# root.title("VNTR to Neighbor-Joining tree")
-# root.iconbitmap('phylotree.ico')
+root.title("VNTR to Neighbor-Joining tree")
+root.iconbitmap('phylotree.ico')
 
 
 class NJTreeConstructor():
@@ -49,6 +66,10 @@ class NJTreeConstructor():
 
         # Tree from the Biopython Phylo BaseTree module
         self.tree = None
+        
+        # List of all loci names
+        self.lociNames = ''
+        self.lociCount = 0
 
     def loadExcelData(self):
         """
@@ -70,14 +91,13 @@ class NJTreeConstructor():
               '3 columns "Name", "Locus", "Allele".)')
 
         # Ask for the excel file path
-# =============================================================================
-#         source_file_path = filedialog.askopenfilename(
-#             title="Select an Excel File",
-#             filetypes=(("Excel files", "*.xlsx"), ("All files", "*.*"))
-#             )
-# =============================================================================
-        # TEMPORARY FOR TESTING, use above ^ # TODO
-        source_file_path = 'data.xlsx'
+        source_file_path = filedialog.askopenfilename(
+            title="Select an Excel File",
+            filetypes=(("Excel files", "*.xlsx"), ("All files", "*.*"))
+            )
+        
+        if source_file_path == '':
+            raise CancelException("Open file cancelled")
 
         # Read the excel data into Pandas DataFrame
         fileData = pd.read_excel(source_file_path, header=0,
@@ -122,19 +142,22 @@ class NJTreeConstructor():
         lociNames = {}  # {key=Locus name: value=Locus count}
         numSamples = len(data)
         unusual_pop = []  # pop with less than minLociCount (potential typo)
-        minLociCount = 6
+        minLociCount = 4
 
-        # Finds all the Loci and their count
+        # Finds all the loci and their total count in the entire data
         for pop in data:
             pop_keys = pop.loci.keys()
-            if len(pop_keys) < minLociCount:
+            # saves loci with less than minLociCount (potential typo)
+            if len(pop_keys) < minLociCount: 
                 unusual_pop.append(pop.name)
             for locus in pop_keys:
                 if locus in lociNames:
                     lociNames[locus] += 1
                 else:
                     lociNames[locus] = 1
-
+        self.lociNames = lociNames.keys()
+        self.lociCount = len(lociNames)
+        
         # Print the number of samples found
         tabs = '\t'
         print(f"{tabs}{numSamples} samples were found.")
@@ -149,11 +172,11 @@ class NJTreeConstructor():
         # Print pop with less than minLociCount (potential typo in pop name)
         if unusual_pop:
             print(f"\tWARNING: The following samples have less",
-                  "than {minLociCount} loci:")
+                  f"than {minLociCount} loci:")
             for locus in unusual_pop:
                 print(f"{tabs}{locus}")
 
-    def saveTreeFile(self, destination: str):
+    def saveTreeFile(self):
         """
         Save the tree data into a tree file.
 
@@ -161,17 +184,26 @@ class NJTreeConstructor():
             destination: file name and address for the tree file created by
                 this script.
         """
-        pass  # TODO
+        print('\nEnter a name for the tree file: ')
+        dest_file_path = filedialog.asksaveasfilename(
+            title="Select an destination and name for your Tree file",
+            filetypes=(("Newick Tree", "*.nwk"), ("All files", "*.*"))
+            )
+        if dest_file_path == '':
+            raise CancelException("Save file cancelled")
+        if dest_file_path[-4:] == '.nwk':
+            dest_file_path = dest_file_path[:-4]
+        write(njtree.tree, f"{dest_file_path}.nwk", 'newick')
+        print(f'\nTree saved in {dest_file_path}.nwk')
 
-    def buildTree(self, data=None):
+    def buildTree(self, data=None, formula='Cavalli'):
         """
         Take the VNTR data and return a Neighbor-Joining tree.
 
         Uses the Cavalli-Sforza chord distance formula to create a distance
         matrix then the Biopython Phylo package to build the neighbor tree
 
-        Input
-        -----
+        Input:
             data (optionnal): the VNTR data to be analysed. If none is passed,
                 the self.excelData from the instance is used.
 
@@ -185,28 +217,121 @@ class NJTreeConstructor():
         else:
             raise AttributeError('No data was loaded into instance.')
 
-        # Calculate the distance matrix from the loaded data
-        self.distanceMatrix = self.__cdCavalliSforza(data)
+        # Calculate the distance matrix from the loaded data according to
+        # the asked formula
+        algo = None
+        if formula == 'Cavalli':
+            algo = self.__cdCavalliSforza
+        elif formula == 'Nei':
+            algo = self.__neiDistance
+        else:
+            raise ValueError('"'+ formula + '"' + " doesn't exist.")
+            
+        self.distanceMatrix = self.__geneticDistance(data, algo)
 
         # Build the tree from the distance matrix
         self.tree = self.__neighbor(self.distanceMatrix)
 
-    def __cdCavalliSforza(self, data):
+    def __cdCavalliSforza(self, dsum):
         """
-        Build a distance matrix with the VNTR data.
+        Return Cavalli-Sforza chord distance.
 
         Uses the Cavalli-Sforza chord distance formula.
+        Distance of 0 indicate that 2 sample are identical.
+        Max distance is (2/pi)*sqrt(2) = 0.900316
 
-        Input
-        -----
-            data: the VNTR data loaded by the loadExcelData method.
+        Input:
+            dsum: sum of the squareroot of the multiplication of each allele
+                frequency between 2 pop.
 
         Return
         ------
-            DistanceMatrix from the Biopython Phylo TreeConstruction module
+            Cavalli-Sforza chord distance
         """
-        pass  # TODO
+        return (2/(math.pi*self.lociCount))*(2*abs(1-dsum))**0.5
+        
+    def __neiDistance(self, dsum):
+        """
+        Return Nei's DA distance
 
+        Uses the Nei's DA distance 1983 formula.
+        Distance of 0 indicate that 2 sample are identical.
+        Max distance is 1.
+
+        Input:
+            dsum: sum of the squareroot of the multiplication of each allele
+                frequency between 2 pop.
+
+        Return
+        ------
+            Nei's distance
+        """
+        return abs(1-dsum)/self.lociCount
+
+    def __geneticDistance(self, data, algo):
+        """
+        Build a distance matrix with the VNTR data.
+
+        Input:
+            data : the VNTR data loaded by the loadExcelData method.
+            algo : the formula used to calculate the genetic distance
+
+        Returns
+        -------
+            DistanceMatrix from the Biopython Phylo TreeConstruction module
+
+        """
+        dmatrix = DistanceMatrix([pop.name for pop in data]) 
+        dsum = 0
+        distance = 0
+        DEBUG = False
+        def printx(*x):
+            if DEBUG:
+                print(*x)
+        
+        # for each pop
+        for pop in data:
+            templst = []
+            printx('Current: ', pop)
+            # compare to all previous samples excluding self
+            for versus in data[:data.index(pop)]: # Lower triangular matrix
+            #for versus in data: # Square matrix
+                distance = 0
+                remainingLocus = self.lociCount
+                printx('\tversus:', versus)
+                # for each locus of pop
+                for locus in pop.loci:
+                    remainingLocus -= 1
+                    dsum = 0
+                    printx('\t'*2, locus)
+                    # for each allele in locus of pop
+                    for allele in pop.loci[locus]:
+                        printx('\t'*3, allele)
+                        # Check if versus has current pop locus
+                        if locus in versus.loci:
+                            # Check if versus has same allele
+                            if allele in versus.loci[locus]:
+                                printx('\t'*4,"present in", versus)
+                                # sum of sqrt of allele frequencies product
+                                dsum += (pop.frequency(locus)[allele] * 
+                                         versus.frequency(locus)[allele])**0.5
+                            else:
+                                printx('\t'*4,"absent in", versus)
+                        else:
+                            printx('\t'*4, versus, "doesnt have a", locus)
+                    
+                    # Adding the distance for this locus
+                    distance += algo(dsum) # use the supplied formula fonction
+                # Adding distance for missing locus
+                distance += algo(0) * remainingLocus
+                # Place final distance between pop and versus in matrix 
+                # once calculated
+                dmatrix[pop.name, versus.name] = distance
+            printx('---------')
+        printx(dmatrix)
+        printx('---------')
+        return dmatrix
+        
     def __neighbor(self, matrix):
         """
         Apply the neighbor joining algo on a distance matrix.
@@ -220,8 +345,9 @@ class NJTreeConstructor():
         -------
             Tree from the Biopython Phylo BaseTree module
         """
-        pass  # TODO
-
+        constructor = DistanceTreeConstructor()
+        tree = constructor.nj(matrix)
+        return tree
 
 class Pop():
     """
@@ -273,6 +399,9 @@ class Pop():
         """Return the name of the pop."""
         return self.name
 
+class CancelException(BaseException):
+    def __init__(self, message):
+        self.message = message
 
 def testUnit():
     """
@@ -294,18 +423,18 @@ def testUnit():
 
 if __name__ == '__main__':
 
-    njtree = NJTreeConstructor()
-    njtree.loadExcelData()
-# =============================================================================
-#     query = input('Is the displayed information correct? [y/n] ')
-#     if query.lower() != 'y':
-#         print('\nCancelling...')
-#         input('Press Enter to exit.')
-#     else:
-#         njtree.buildTree()
-#         print('\nNeighbor-Joining tree constructed.')
-#         destination = input('Enter a name for the tree file: ')
-#         njtree.saveTreeFile(destination)
-#         print(f'\nTree saved in {destination}')
-#         input('Press Enter to exit.')
-# =============================================================================
+    try:
+        njtree = NJTreeConstructor()
+        njtree.loadExcelData()
+        query = input('Is the displayed information correct? [y/n] ')
+        if query.lower() != 'y':
+            raise CancelException("VNTR information deemed incorrect.")
+        else:
+            njtree.buildTree(formula='Nei')
+            print('\nNeighbor-Joining tree constructed.')
+            njtree.saveTreeFile()
+            input('Press Enter to exit.')
+    except CancelException as e:
+        print(f'\n***{e.message}***')
+        input('Press Enter to exit.')
+        
