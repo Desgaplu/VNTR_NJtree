@@ -22,10 +22,10 @@ Description:
         sample2 loci1   allele1
 """
 
-import pandas as pd
+import pandas as pd  # using the readExcel method
 import tkinter as tk
 from tkinter import filedialog
-import math
+from math import pi
 from Bio.Phylo.TreeConstruction import DistanceTreeConstructor
 from Bio.Phylo.TreeConstruction import DistanceMatrix
 from Bio.Phylo import write
@@ -259,7 +259,7 @@ class NJTreeConstructor():
         ------
             Cavalli-Sforza chord distance
         """
-        return (2/(math.pi*self.lociCount))*(2*abs(1-dsum))**0.5
+        return (2/(pi*self.lociCount))*(2*abs(1-dsum))**0.5
 
     def __neiDistance(self, dsum):
         """
@@ -365,6 +365,28 @@ class NJTreeConstructor():
                 for allele, freq in pop.frequency(locus).items():
                     print(pop.name, locus, allele, round(freq, ndigits=4))
 
+    def executeCommand(self):
+        """Excute the workflow, display on command console."""
+        try:
+            # Load an excel file contain VNTR data
+            self.loadExcelData()
+            query = input('Is the displayed information correct? [y/n] ')
+            if query.lower() != 'y':
+                raise CancelException("VNTR information deemed incorrect.")
+            else:
+                # Build a phylogenetic tree
+                self.buildTree(formula='Cavalli')
+                print('\nNeighbor-Joining tree constructed.')
+                # Save the tree in specified file
+                self.saveTreeFile()
+                input('Press Enter to exit.')
+        except CancelException as e:
+            print(f'\n***{e.message}***')
+            input('Press Enter to exit.')
+    
+    def executeGUI(self):
+        """Excute the workflow, display on GUI."""
+        pass
 
 class Pop():
     """
@@ -425,21 +447,7 @@ class CancelException(BaseException):
 
 
 if __name__ == '__main__':
+    
+    njtree = NJTreeConstructor()
+    njtree.executeCommand()
 
-    try:
-        njtree = NJTreeConstructor()
-        # Load an excel file contain VNTR data
-        njtree.loadExcelData()
-        query = input('Is the displayed information correct? [y/n] ')
-        if query.lower() != 'y':
-            raise CancelException("VNTR information deemed incorrect.")
-        else:
-            # Build a phylogenetic tree
-            njtree.buildTree(formula='Cavalli')
-            print('\nNeighbor-Joining tree constructed.')
-            # Save the tree in specified file
-            njtree.saveTreeFile()
-            input('Press Enter to exit.')
-    except CancelException as e:
-        print(f'\n***{e.message}***')
-        input('Press Enter to exit.')
