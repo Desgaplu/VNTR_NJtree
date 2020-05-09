@@ -35,8 +35,8 @@ root = tk.Tk()
 root.withdraw()  # Prevent a empty window to be opened
 
 # Title and icon for eventual GUI
-root.title("VNTR to Neighbor-Joining tree")
-root.iconbitmap('phylotree.ico')
+# root.title("VNTR to Neighbor-Joining tree")
+# root.iconbitmap('phylotree.ico')
 
 
 class NJTreeConstructor():
@@ -66,7 +66,7 @@ class NJTreeConstructor():
 
         # Tree from the Biopython Phylo BaseTree module
         self.tree = None
-        
+
         # List of all loci names
         self.lociNames = ''
         self.lociCount = 0
@@ -95,7 +95,7 @@ class NJTreeConstructor():
             title="Select an Excel File",
             filetypes=(("Excel files", "*.xlsx"), ("All files", "*.*"))
             )
-        
+
         if source_file_path == '':
             raise CancelException("Open file cancelled")
 
@@ -120,7 +120,7 @@ class NJTreeConstructor():
                 currentPop.addLocus(i.Locus, i.Allele)
                 pop_list.append(currentPop)
 
-        # save data self.excelData
+        # save data into self.excelData
         self.excelData = pop_list
         print("Excel Data succesfully loaded:")
 
@@ -138,17 +138,17 @@ class NJTreeConstructor():
         Input:
             data: the data to be scanned in format [Pop()]
         """
-        # print a data feedback (number of samples, loci names etc)
         lociNames = {}  # {key=Locus name: value=Locus count}
         numSamples = len(data)
         unusual_pop = []  # pop with less than minLociCount (potential typo)
-        minLociCount = 4
+        minLociCount = 4  # minimum loci to trigger a warning
+        loci_missing_pop = []  # pop with missing loci
 
         # Finds all the loci and their total count in the entire data
         for pop in data:
             pop_keys = pop.loci.keys()
             # saves loci with less than minLociCount (potential typo)
-            if len(pop_keys) < minLociCount: 
+            if len(pop_keys) < minLociCount:
                 unusual_pop.append(pop.name)
             for locus in pop_keys:
                 if locus in lociNames:
@@ -157,7 +157,7 @@ class NJTreeConstructor():
                     lociNames[locus] = 1
         self.lociNames = lociNames.keys()
         self.lociCount = len(lociNames)
-        
+
         # Print the number of samples found
         tabs = '\t'
         print(f"{tabs}{numSamples} samples were found.")
@@ -168,6 +168,17 @@ class NJTreeConstructor():
         print(f"{tabs}Locus name\t\t Count")
         for name, count in lociNames.items():
             print(f"{tabs}{name:<8}{count:>10}")
+
+        # Print pop with one or more missing loci
+        for pop in data:
+            for locus in self.lociNames:
+                if locus not in pop.loci:
+                    loci_missing_pop.append(f"{pop.name} is missing locus " +
+                                            locus)
+        if loci_missing_pop:
+            print("\tWARNING:")
+            for message in loci_missing_pop:
+                print(f"{tabs}{message}")
 
         # Print pop with less than minLociCount (potential typo in pop name)
         if unusual_pop:
@@ -191,7 +202,7 @@ class NJTreeConstructor():
             )
         if dest_file_path == '':
             raise CancelException("Save file cancelled")
-        if dest_file_path[-4:] == '.nwk':
+        if dest_file_path[-4:] == '.nwk':  # prevent saving a ".nwk.nwk" file
             dest_file_path = dest_file_path[:-4]
         write(njtree.tree, f"{dest_file_path}.nwk", 'newick')
         print(f'\nTree saved in {dest_file_path}.nwk')
@@ -211,7 +222,7 @@ class NJTreeConstructor():
         ------
             Tree from the Biopython Phylo BaseTree module.
         """
-        # verify if excel data is loaded / raise error otherwise
+        # Verify if excel data is loaded / raise error otherwise
         if data is None and self.excelData:
             data = self.excelData
         else:
@@ -225,8 +236,8 @@ class NJTreeConstructor():
         elif formula == 'Nei':
             algo = self.__neiDistance
         else:
-            raise ValueError('"'+ formula + '"' + " doesn't exist.")
-            
+            raise ValueError('"' + formula + '"' + " doesn't exist.")
+
         self.distanceMatrix = self.__geneticDistance(data, algo)
 
         # Build the tree from the distance matrix
@@ -234,7 +245,7 @@ class NJTreeConstructor():
 
     def __cdCavalliSforza(self, dsum):
         """
-        Return Cavalli-Sforza chord distance.
+        Return the Cavalli-Sforza chord distance.
 
         Uses the Cavalli-Sforza chord distance formula.
         Distance of 0 indicate that 2 sample are identical.
@@ -249,10 +260,10 @@ class NJTreeConstructor():
             Cavalli-Sforza chord distance
         """
         return (2/(math.pi*self.lociCount))*(2*abs(1-dsum))**0.5
-        
+
     def __neiDistance(self, dsum):
         """
-        Return Nei's DA distance
+        Return Nei's DA distance.
 
         Uses the Nei's DA distance 1983 formula.
         Distance of 0 indicate that 2 sample are identical.
@@ -281,28 +292,28 @@ class NJTreeConstructor():
             DistanceMatrix from the Biopython Phylo TreeConstruction module
 
         """
-        dmatrix = DistanceMatrix([pop.name for pop in data]) 
-        dsum = 0
-        distance = 0
-        DEBUG = False
+        dmatrix = DistanceMatrix([pop.name for pop in data])  # Initialize
+        dsum = 0  # sum of (allele frequency popA * allele frequency popB)**0.5
+        distance = 0  # genetic distance between 2 pop
+        DEBUG = False  # Print an output for debugging
+
         def printx(*x):
             if DEBUG:
                 print(*x)
-        
+
         # for each pop
         for pop in data:
-            templst = []
             printx('Current: ', pop)
             # compare to all previous samples excluding self
-            for versus in data[:data.index(pop)]: # Lower triangular matrix
-            #for versus in data: # Square matrix
-                distance = 0
+            # for versus in data:                   # Square matrix
+            for versus in data[:data.index(pop)]:   # Lower triangular matrix
+                distance = 0  # initialize distance for pop vs versus
                 remainingLocus = self.lociCount
                 printx('\tversus:', versus)
                 # for each locus of pop
                 for locus in pop.loci:
                     remainingLocus -= 1
-                    dsum = 0
+                    dsum = 0  # initialize sum for a single locus
                     printx('\t'*2, locus)
                     # for each allele in locus of pop
                     for allele in pop.loci[locus]:
@@ -311,27 +322,25 @@ class NJTreeConstructor():
                         if locus in versus.loci:
                             # Check if versus has same allele
                             if allele in versus.loci[locus]:
-                                printx('\t'*4,"present in", versus)
+                                printx('\t'*4, "present in", versus)
                                 # sum of sqrt of allele frequencies product
-                                dsum += (pop.frequency(locus)[allele] * 
+                                dsum += (pop.frequency(locus)[allele] *
                                          versus.frequency(locus)[allele])**0.5
                             else:
-                                printx('\t'*4,"absent in", versus)
+                                printx('\t'*4, "absent in", versus)
                         else:
                             printx('\t'*4, versus, "doesnt have a", locus)
-                    
                     # Adding the distance for this locus
-                    distance += algo(dsum) # use the supplied formula fonction
+                    distance += algo(dsum)  # use the supplied formula fonction
                 # Adding distance for missing locus
                 distance += algo(0) * remainingLocus
-                # Place final distance between pop and versus in matrix 
-                # once calculated
+                # Place calculated distance between pop and versus in matrix
                 dmatrix[pop.name, versus.name] = distance
             printx('---------')
         printx(dmatrix)
         printx('---------')
         return dmatrix
-        
+
     def __neighbor(self, matrix):
         """
         Apply the neighbor joining algo on a distance matrix.
@@ -348,6 +357,14 @@ class NJTreeConstructor():
         constructor = DistanceTreeConstructor()
         tree = constructor.nj(matrix)
         return tree
+
+    def alleleFrequency(self):
+        """Print an allele frequency table."""
+        for pop in self.excelData:
+            for locus in pop.loci:
+                for allele, freq in pop.frequency(locus).items():
+                    print(pop.name, locus, allele, round(freq, ndigits=4))
+
 
 class Pop():
     """
@@ -399,42 +416,30 @@ class Pop():
         """Return the name of the pop."""
         return self.name
 
+
 class CancelException(BaseException):
+    """Exception for dealing with the cancel command from user."""
+
     def __init__(self, message):
         self.message = message
-
-def testUnit():
-    """
-    For testing the script.
-
-    Returns
-    -------
-    None.
-
-    """
-    sample = Pop('R1105')
-    sample.addLocus('Tr1', 650)
-    sample.addLocus('Tr1', 650)
-    sample.addLocus('Tr1', 720)
-    sample.addLocus('Tr2', 150)
-    # assert test_bool, "Test failed comment"
-    # print("All test passed")
 
 
 if __name__ == '__main__':
 
     try:
         njtree = NJTreeConstructor()
+        # Load an excel file contain VNTR data
         njtree.loadExcelData()
         query = input('Is the displayed information correct? [y/n] ')
         if query.lower() != 'y':
             raise CancelException("VNTR information deemed incorrect.")
         else:
-            njtree.buildTree(formula='Nei')
+            # Build a phylogenetic tree
+            njtree.buildTree(formula='Cavalli')
             print('\nNeighbor-Joining tree constructed.')
+            # Save the tree in specified file
             njtree.saveTreeFile()
             input('Press Enter to exit.')
     except CancelException as e:
         print(f'\n***{e.message}***')
         input('Press Enter to exit.')
-        
