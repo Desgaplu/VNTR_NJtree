@@ -21,7 +21,7 @@ Description:
         sample1 loci2   allele2
         sample2 loci1   allele1
 """
-
+__version__ = "1.0.0"
 import pandas as pd  # using the readExcel method
 import tkinter as tk
 from tkinter import filedialog
@@ -122,7 +122,7 @@ class NJTreeConstructor():
 
         # save data into self.excelData
         self.excelData = pop_list
-        print("Excel Data succesfully loaded:")
+        print("\nExcel Data succesfully loaded:")
 
         # scan the data
         self.__scanExcelData(self.excelData)
@@ -195,7 +195,7 @@ class NJTreeConstructor():
             destination: file name and address for the tree file created by
                 this script.
         """
-        print('\nEnter a name for the tree file: ')
+        print('\nEnter the destination for the tree file: ')
         dest_file_path = filedialog.asksaveasfilename(
             title="Select an destination and name for your Tree file",
             filetypes=(("Newick Tree", "*.nwk"), ("All files", "*.*"))
@@ -205,7 +205,7 @@ class NJTreeConstructor():
         if dest_file_path[-4:] == '.nwk':  # prevent saving a ".nwk.nwk" file
             dest_file_path = dest_file_path[:-4]
         write(njtree.tree, f"{dest_file_path}.nwk", 'newick')
-        print(f'\nTree saved in {dest_file_path}.nwk')
+        print(f'\tTree saved in {dest_file_path}.nwk')
 
     def buildTree(self, data=None, formula='Cavalli'):
         """
@@ -370,16 +370,17 @@ class NJTreeConstructor():
         try:
             # Load an excel file contain VNTR data
             self.loadExcelData()
-            query = input('Is the displayed information correct? [y/n] ')
+            query = input('\nIs the displayed information correct? [y/n] ')
             if query.lower() != 'y':
-                raise CancelException("VNTR information deemed incorrect.")
+                raise CancelException(
+                    "VNTR information considered incorrect by user.")
             else:
                 # Build a phylogenetic tree
                 self.buildTree(formula='Cavalli')
                 print('\nNeighbor-Joining tree constructed.')
                 # Save the tree in specified file
                 self.saveTreeFile()
-                input('Press Enter to exit.')
+                input('\nPress Enter to exit.')
         except CancelException as e:
             print(f'\n***{e.message}***')
             input('Press Enter to exit.')
