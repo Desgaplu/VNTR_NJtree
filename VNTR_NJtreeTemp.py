@@ -21,14 +21,15 @@ Description:
         sample1 loci2   allele2
         sample2 loci1   allele1
 """
-__version__ = "1.0.0"
+__version__ = "1.0.1"
 import pandas as pd  # using the readExcel method
 import tkinter as tk
 from tkinter import filedialog
 from math import pi
-from Bio.Phylo.TreeConstruction import DistanceTreeConstructor
-from Bio.Phylo.TreeConstruction import DistanceMatrix
+import numpy as np
+import copy
 from Bio.Phylo import write
+from Bio.Phylo import BaseTree
 
 # Initialise tkinter to enable the uses of filedialog
 root = tk.Tk()
@@ -38,6 +39,75 @@ root.withdraw()  # Prevent a empty window to be opened
 # root.title("VNTR to Neighbor-Joining tree")
 # root.iconbitmap('phylotree.ico')
 
+class DistanceMatrix(object):
+    '''
+    Distance matrix class.
+    Contains a list of IDs and a distance matrix for the same IDs. Can produce
+    a submatrix when given an ID list, or calculate ID lists of a desired size
+    using DJ algorithm
+    '''
+    def __init__(self, names):
+        #  Initialize the matrix
+        self.matrix = np.matrix(np.zeros(shape=(len(names), len(names)))).astype(float)
+        self.names = names
+        
+        #  ID-to-index dictionary
+        self.indices = {} #  {name:index}
+        #  index-to-ID dictionary
+        self.index_to_name = {} #  {index:name}
+        
+        self.__createIndices(names)
+        
+    def __createIndices(self, names):
+        index = 0
+        indices = {}
+        index_to_name = {}
+        for name in names:
+            indices.update({name:index})
+            index_to_name.update({index:name})
+            index += 1
+        self.indices = indices
+        self.index_to_name = index_to_name
+    
+    #  Dict-like behaviour
+
+    def __getitem__(self, item):
+        '''
+        Get a distance between two sequences
+        :param item: a tuple of sequence names
+        :return:
+        '''
+        assert type(item) is tuple
+        assert len(item) == 2
+        # Verify if names are supplied instead of indices
+        if all(isinstance(x, str) for x in item):
+            return self.matrix[self.indices[item[0]], self.indices[item[1]]]
+        else:
+            return self.matrix[item[0], item[1]]
+
+    def __setitem__(self, key, value):
+        '''
+        Add an item to the matrix
+        :param key: a 2-item tuple
+        :param item: float
+        '''
+        assert type(key) is tuple
+        assert len(key) == 2
+        if all(isinstance(x, str) for x in key):
+            self.matrix[self.indices[key[0]], self.indices[key[1]]] = value
+            self.matrix[self.indices[key[1]], self.indices[key[0]]] = value
+        else:
+            self.matrix[key[0], key[1]] = value
+            self.matrix[key[1], key[0]] = value
+            
+    def __delitem__(self, ids):
+        self.matrix = np.delete(np.delete(self.matrix, ids, axis=0), ids, axis=1)
+        del self.names[ids]
+        self.__createIndices(self.names)
+        
+    def __len__(self):
+        return len(self.indices)
+    
 
 class NJTreeConstructor():
     """
@@ -61,7 +131,7 @@ class NJTreeConstructor():
         # VNTR data in a list of Pop()
         self.excelData = None
 
-        # DistanceMatrix from the Biopython Phylo TreeConstruction module
+        # DistanceMatrix 
         self.distanceMatrix = None
 
         # Tree from the Biopython Phylo BaseTree module
@@ -119,6 +189,7 @@ class NJTreeConstructor():
                 currentPop = Pop(i.Name)
                 currentPop.addLocus(i.Locus, i.Allele)
                 pop_list.append(currentPop)
+            print('Loading pop')
 
         # save data into self.excelData
         self.excelData = pop_list
@@ -306,15 +377,15 @@ class NJTreeConstructor():
 
         Returns
         -------
-            DistanceMatrix from the Biopython Phylo TreeConstruction module
+            DistanceMatrix
 
         """
         dmatrix = DistanceMatrix([pop.name for pop in data])  # Initialize
         dsum = 0  # sum of (allele frequency popA * allele frequency popB)**0.5
         distance = 0  # genetic distance between 2 pop
         DEBUG = False  # Print an output for debugging
-        num_pop = len(data)
-        current_pop = 1
+        num_pop = len(data) # For visual progress
+        current_pop = 1 # For visual progress
 
         def printx(*x):
             if DEBUG:
@@ -368,19 +439,245 @@ class NJTreeConstructor():
 
         Input
         -----
-            matrix : DistanceMatrix from the Biopython Phylo TreeConstruction
+            matrix : DistanceMatrix
                 module
+
+        Returns
+        -------
+            Tree instance of Bio.Phylo.BaseTree
+        """
+        
+        print("Starting Neignbor.")
+        tree = self.__nj(matrix)
+        print("Neighbor ended.")
+        return tree
+
+    def __nj(self, distance_matrix): # Second attempt at fast and correct
+        """Construct and return a Neighbor Joining tree.
+
+        Input
+        -----
+            distance_matrix : a distance matrix
 
         Returns
         -------
             Tree from the Biopython Phylo BaseTree module
         """
-        constructor = DistanceTreeConstructor()
-        print("Starting Neignbor.")
-        tree = constructor.nj(matrix)
-        print("Neighbor ended.")
-        return tree
+        rptsum  = lambda arr: np.repeat(np.sum(arr)/(np.size(arr)-2),
+                                        np.size(arr))
+        mapvsum = lambda mat: np.matrix([rptsum(line) for line in mat])
+        idxmin  = lambda mat: np.unravel_index(np.argmin(mat), np.shape(mat))
+        
+        # make a copy of the distance matrix to be used
+        dm = copy.deepcopy(distance_matrix)
+        
+        # init terminal clades
+        clades = [BaseTree.Clade(None, name) for name in dm.names]
+        
+        # init node distance
+        #node_dist = [0] * len(dm)
+        # init minimum index
+        min_i = 0
+        min_j = 0
+        inner_count = 0
+        # special cases for Minimum Alignment Matrices
+        if len(dm) == 1:
+            root = clades[0]
 
+            return BaseTree.Tree(root, rooted=False)
+        elif len(dm) == 2:
+            # minimum distance will always be [1,0]
+            min_i = 1
+            min_j = 0
+            clade1 = clades[min_i]
+            clade2 = clades[min_j]
+            clade1.branch_length = dm[min_i, min_j] / 2.0
+            clade2.branch_length = dm[min_i, min_j] - clade1.branch_length
+            inner_clade = BaseTree.Clade(None, "Inner")
+            inner_clade.clades.append(clade1)
+            inner_clade.clades.append(clade2)
+            clades[0] = inner_clade
+            root = clades[0]
+
+            return BaseTree.Tree(root, rooted=False)
+        
+        
+        while len(dm) > 2:
+            print("Joining pop #", len(dm))
+            # calculate nodeDist
+            # for i in range(0, len(dm)):
+            #     node_dist[i] = 0
+            #     for j in range(0, len(dm)):
+            #         node_dist[i] += dm[i, j]
+            #     node_dist[i] = node_dist[i] / (len(dm) - 2)
+            SH = mapvsum(dm.matrix)
+            SV = SH.transpose()
+            
+            # find minimum distance pair
+            # min_dist = dm[1, 0] - node_dist[1] - node_dist[0]
+            # min_i = 0
+            # min_j = 1
+            # for i in range(1, len(dm)):
+            #     for j in range(0, i):
+            #         temp = dm[i, j] - node_dist[i] - node_dist[j]
+            #         if min_dist > temp:
+            #             min_dist = temp
+            #             min_i = i
+            #             min_j = j
+            I = np.identity(len(dm.matrix))
+            M = dm.matrix + (np.multiply(I, SH + SV) - SH - SV)
+            min_i, min_j = idxmin(M)
+            # create clade
+            clade1 = clades[min_i]
+            clade2 = clades[min_j]
+            inner_count += 1
+            inner_clade = BaseTree.Clade(None, "Inner" + str(inner_count))
+            inner_clade.clades.append(clade1)
+            inner_clade.clades.append(clade2)
+            # assign branch length
+            clade1.branch_length = (
+                dm[min_i, min_j] + SH[min_i,min_j] - SV[min_i,min_j]
+            ) / 2.0
+            clade2.branch_length = dm[min_i, min_j] - clade1.branch_length
+
+            # update node list
+            clades[min_j] = inner_clade
+            del clades[min_i]
+
+            # rebuild distance matrix,
+            # set the distances of new node at the index of min_j
+            # for k in range(0, len(dm)):
+            #     if k != min_i and k != min_j:
+            #         dm[min_j, k] = (
+            #             dm[min_i, k] + dm[min_j, k] - dm[min_i, min_j]
+            #         ) / 2.0
+            u = [(dm[min_i,k] + dm[min_j,k] - dm[min_i,min_j]) / 2 for k in 
+                 range(len(dm))]
+            dm.matrix[min_j] = u
+            dm.matrix[:,min_j] = np.matrix(u).transpose()
+            
+            dm.names[min_j] = "Inner" + str(inner_count)
+            del dm[min_i]
+
+        # set the last clade as one of the child of the inner_clade
+        root = None
+        if clades[0] == inner_clade:
+            clades[0].branch_length = 0
+            clades[1].branch_length = dm[1, 0]
+            clades[0].clades.append(clades[1])
+            root = clades[0]
+        else:
+            clades[0].branch_length = dm[1, 0]
+            clades[1].branch_length = 0
+            clades[1].clades.append(clades[0])
+            root = clades[1]
+
+        return BaseTree.Tree(root, rooted=False)
+    
+# =============================================================================
+#     def __nj2(self, distance_matrix): # Functionnal and correct but slow
+#         """Construct and return a Neighbor Joining tree.
+# 
+#         :Parameters:
+#             distance_matrix : DistanceMatrix
+#                 The distance matrix for tree construction.
+# 
+#         """
+#         # make a copy of the distance matrix to be used
+#         dm = copy.deepcopy(distance_matrix)
+#         # init terminal clades
+#         clades = [BaseTree.Clade(None, name) for name in dm.names]
+#         # init node distance
+#         node_dist = [0] * len(dm)
+#         # init minimum index
+#         min_i = 0
+#         min_j = 0
+#         inner_count = 0
+#         # special cases for Minimum Alignment Matrices
+#         if len(dm) == 1:
+#             root = clades[0]
+# 
+#             return BaseTree.Tree(root, rooted=False)
+#         elif len(dm) == 2:
+#             # minimum distance will always be [1,0]
+#             min_i = 1
+#             min_j = 0
+#             clade1 = clades[min_i]
+#             clade2 = clades[min_j]
+#             clade1.branch_length = dm[min_i, min_j] / 2.0
+#             clade2.branch_length = dm[min_i, min_j] - clade1.branch_length
+#             inner_clade = BaseTree.Clade(None, "Inner")
+#             inner_clade.clades.append(clade1)
+#             inner_clade.clades.append(clade2)
+#             clades[0] = inner_clade
+#             root = clades[0]
+# 
+#             return BaseTree.Tree(root, rooted=False)
+#         while len(dm) > 2:
+#             print("Joining pop#", len(dm))
+#             # calculate nodeDist
+#             for i in range(0, len(dm)):
+#                 node_dist[i] = 0
+#                 for j in range(0, len(dm)):
+#                     node_dist[i] += dm[i, j]
+#                 node_dist[i] = node_dist[i] / (len(dm) - 2)
+# 
+#             # find minimum distance pair
+#             min_dist = dm[1, 0] - node_dist[1] - node_dist[0]
+#             min_i = 0
+#             min_j = 1
+#             for i in range(1, len(dm)):
+#                 for j in range(0, i):
+#                     temp = dm[i, j] - node_dist[i] - node_dist[j]
+#                     if min_dist > temp:
+#                         min_dist = temp
+#                         min_i = i
+#                         min_j = j
+#             # create clade
+#             clade1 = clades[min_i]
+#             clade2 = clades[min_j]
+#             inner_count += 1
+#             inner_clade = BaseTree.Clade(None, "Inner" + str(inner_count))
+#             inner_clade.clades.append(clade1)
+#             inner_clade.clades.append(clade2)
+#             # assign branch length
+#             clade1.branch_length = (
+#                 dm[min_i, min_j] + node_dist[min_i] - node_dist[min_j]
+#             ) / 2.0
+#             clade2.branch_length = dm[min_i, min_j] - clade1.branch_length
+# 
+#             # update node list
+#             clades[min_j] = inner_clade
+#             del clades[min_i]
+# 
+#             # rebuild distance matrix,
+#             # set the distances of new node at the index of min_j
+#             for k in range(0, len(dm)):
+#                 if k != min_i and k != min_j:
+#                     dm[min_j, k] = (
+#                         dm[min_i, k] + dm[min_j, k] - dm[min_i, min_j]
+#                     ) / 2.0
+# 
+#             dm.names[min_j] = "Inner" + str(inner_count)
+#             del dm[min_i]
+#             # dm.matrix = withoutIndices(dm.matrix, (min_i))
+# 
+#         # set the last clade as one of the child of the inner_clade
+#         root = None
+#         if clades[0] == inner_clade:
+#             clades[0].branch_length = 0
+#             clades[1].branch_length = dm[1, 0]
+#             clades[0].clades.append(clades[1])
+#             root = clades[0]
+#         else:
+#             clades[0].branch_length = dm[1, 0]
+#             clades[1].branch_length = 0
+#             clades[1].clades.append(clades[0])
+#             root = clades[1]
+# 
+#         return BaseTree.Tree(root, rooted=False)
+# =============================================================================
+    
     def alleleFrequency(self):
         """Print an allele frequency table."""
         for pop in self.excelData:
@@ -402,7 +699,8 @@ class NJTreeConstructor():
                 self.buildTree(formula='Cavalli')
                 print('\nNeighbor-Joining tree constructed.')
                 # Save the tree in specified file
-                self.saveTreeFile()
+                # self.saveTreeFile() # TODO
+                print(self.tree)
                 input('\nPress Enter to exit.')
         except CancelException as e:
             print(f'\n***{e.message}***')
@@ -470,8 +768,101 @@ class CancelException(BaseException):
         self.message = message
 
 
+
+class Tree():
+    parent = None
+    
+    def __init__(self, left = None, right = None, dleft = 1, dright = 1):
+        self.left  = left
+        left.parent = self
+        self.right = right
+        left.dparent = dleft
+        right.parent = self
+        self.dleft  = dleft
+        right.dparent = dright
+        self.dright = dright
+        
+
+    
+    def __repr__(self):
+        head = lambda arr: arr[0]
+        tail = lambda arr: arr[1:]
+        s = "┬" + ("─" * int(self.dleft))
+        if self.left:
+            left = repr(self.left).splitlines()
+            s += "" + head(left) + "\n"
+            for line in tail(left):
+                s += "│"  + (" " * int(self.dleft))
+                s += line + "\n"
+        if self.right:
+            right = repr(self.right).splitlines()
+            s += "└" + ("─" * int(self.dright))
+            s += head(right) + "\n"
+            for line in tail(right):
+                s += " "  + (" " * int(self.dright))
+                s += line + "\n"
+        return s
+    
+    def toClades(self):
+        
+        left = None
+        right = None
+        if self.left:
+            left = self.left.toClades()
+        if self.right:
+            right = self.right.toClades()
+        try:
+            return BaseTree.Clade(self.dparent, None, [left, right])
+        except AttributeError:
+            return BaseTree.Clade(1, None, [left, right])
+        root = None
+        return BaseTree.Tree(root, rooted=False)
+    
+    def __eq__(self, other):
+        if other.__class__.__name__ != "Tree":
+            return False
+        if self.left == other.left:
+            return  self.left   == other.left   and \
+                    self.right  == other.right  and \
+                    self.dleft  == other.dleft  and \
+                    self.dright == other.dright
+        else:
+            return  self.left   == other.right  and \
+                    self.right  == other.left   and \
+                    self.dleft  == other.dright and \
+                    self.dright == other.dleft
+    def contains(self, other):
+        if id(self) == id(other):
+            return True
+        else:
+            if other.parent == None:
+                return False
+            else:
+                return self.contains(other.parent)
+    def distanceTo(self, other):
+        if id(self) == id(other):
+            return 0
+        elif self.contains(other):
+            return other.dparent + self.distanceTo(other.parent)
+        elif other.contains(self):
+            return self.dparent + other.distanceTo(self.parent)
+        elif self.parent and other.parent:
+            return self.dparent + other.dparent + self.parent.distanceTo(other.parent)
+        else:
+            raise LookupError("Nodes are not in the same tree!")
+
+class Leaf(Tree):
+    def __init__(self, name):
+        self.name = name
+    def __repr__(self):
+        return self.name
+    def __eq__(self, other):
+        return self.name == other.name
+    def toClades(self):
+        return BaseTree.Clade(self.dparent, self.name)
+
 if __name__ == '__main__':
     
     njtree = NJTreeConstructor()
     njtree.executeCommand()
-
+    

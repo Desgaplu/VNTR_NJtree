@@ -11,6 +11,8 @@ root = Tk()
 root.title("This is my tkinter")
 root.iconbitmap('phylotree.ico')
 
+hello_count = 0
+
 def clickMe(hello=None): # when no parameter is passed, take content of entree
     if hello is None:
         hello = 'Hello ' + entree.get() + '!' # take the content of entree
@@ -18,6 +20,12 @@ def clickMe(hello=None): # when no parameter is passed, take content of entree
     entree.insert(0, "Who?") # insert at pos 0 the following string
     myLabel = Label(root, text=hello)
     myLabel.pack() # pack the content of hello
+    global hello_count # link to the global scope hello_count
+    hello_count += 1
+    global myLabel1 # use the global myLabel1 instead of a new scope instance
+    myLabel1.destroy()
+    myLabel1 = Label(frame, text='Hello World! x'+str(hello_count))
+    myLabel1.pack()
     
 # Creating a Label Widget
 frame = LabelFrame(root, text="My Frame..", padx=50, pady=50) # inner padding of the frame
