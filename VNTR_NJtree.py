@@ -1,4 +1,5 @@
 #! python3
+# -*- coding: utf-8
 """
 Created on Mon Apr 27 22:39:15 2020
 
@@ -21,14 +22,15 @@ Description:
         sample1 loci2   allele2
         sample2 loci1   allele1
 """
-__version__ = "1.0.0"
+__version__ = "1.0.1"
 import pandas as pd  # using the readExcel method
-import tkinter as tk
-from tkinter import filedialog
-from math import pi
-from Bio.Phylo.TreeConstruction import DistanceTreeConstructor
-from Bio.Phylo.TreeConstruction import DistanceMatrix
-from Bio.Phylo import write
+import tkinter as tk  # using the open filedialog
+from tkinter import filedialog  # using the open filedialog
+from math import pi  # for CavalliSforza algo
+import numpy as np
+import copy
+from Bio.Phylo import write  # Biopython
+from Bio.Phylo import BaseTree # Biopython
 
 # Initialise tkinter to enable the uses of filedialog
 root = tk.Tk()
@@ -37,6 +39,97 @@ root.withdraw()  # Prevent a empty window to be opened
 # Title and icon for eventual GUI
 # root.title("VNTR to Neighbor-Joining tree")
 # root.iconbitmap('phylotree.ico')
+
+
+class DistanceMatrix(object):
+    """
+    Distance matrix class.
+
+    Contains a list of IDs and a distance matrix for the same IDs.
+    IDs can be both indices or names (str).
+
+    Attributes
+    ----------
+        names: a list of names (str)
+    """
+
+    def __init__(self, names):
+
+        #  Initialize the matrix
+        self.matrix = np.matrix(np.zeros(shape=(len(names),
+                                                len(names)))).astype(float)
+        self.names = names
+
+        #  ID-to-index dictionary
+        self.indices = {}  # {name:index}
+        #  index-to-ID dictionary
+        self.index_to_name = {}  # {index:name}
+
+        # Create the indices dictionnary with the provided list of names
+        self.__createIndices(names)
+
+    def __createIndices(self, names):
+        index = 0
+        indices = {}
+        index_to_name = {}
+        for name in names:
+            indices.update({name: index})
+            index_to_name.update({index: name})
+            index += 1
+        self.indices = indices
+        self.index_to_name = index_to_name
+
+    #  Dict-like behaviour
+
+    def __getitem__(self, item):
+        """
+        Get a distance between two sequences.
+
+        Input
+        -----
+            item: a tuple of sequence names
+
+        Return
+        ------
+            the genetic distance (float)
+        """
+        assert type(item) is tuple
+        assert len(item) == 2
+        # Verify if names are supplied instead of indices
+        if all(isinstance(x, str) for x in item):
+            return self.matrix[self.indices[item[0]], self.indices[item[1]]]
+        else:
+            return self.matrix[item[0], item[1]]
+
+    def __setitem__(self, key, value):
+        """
+        Add an item to the matrix.
+
+        Input
+        -----
+            a 2-item tuple
+                key: name (str) or index (int)
+                value: genetic distance (float)
+        """
+        assert type(key) is tuple
+        assert len(key) == 2
+        if all(isinstance(x, str) for x in key):
+            self.matrix[self.indices[key[0]], self.indices[key[1]]] = value
+            self.matrix[self.indices[key[1]], self.indices[key[0]]] = value
+        else:
+            self.matrix[key[0], key[1]] = value
+            self.matrix[key[1], key[0]] = value
+
+    def __delitem__(self, ids):
+        """Remove a single ID."""
+        self.matrix = np.delete(np.delete(self.matrix, ids, axis=0),
+                                ids, axis=1)
+        del self.names[ids]
+        self.__createIndices(self.names)
+
+    def __len__(self):
+        """Return count of IDs in the matrix."""
+        return len(self.indices)
 
 
 class NJTreeConstructor():
@@ -61,10 +154,10 @@ class NJTreeConstructor():
         # VNTR data in a list of Pop()
         self.excelData = None
 
-        # DistanceMatrix from the Biopython Phylo TreeConstruction module
+        # DistanceMatrix
         self.distanceMatrix = None
 
-        # Tree from the Biopython Phylo BaseTree module
+        # Tree instance of Biopython Phylo BaseTree module
         self.tree = None
 
         # List of all loci names
@@ -110,7 +203,12 @@ class NJTreeConstructor():
 
         # load data into list of pop then into self.excelData
         pop_list = []
+        # Initialize the progress bar at 0%
+        self.__printProgressBar(0, fileData.shape[0], 'Loading Data:',
+                                'Complete', 50)
+        j = 0  # progress counter
         for i in fileData.itertuples(index=False):
+            j += 1  # update progress counter
             for item in pop_list:
                 if item.name == i.Name:
                     item.addLocus(i.Locus, i.Allele)
@@ -119,6 +217,9 @@ class NJTreeConstructor():
                 currentPop = Pop(i.Name)
                 currentPop.addLocus(i.Locus, i.Allele)
                 pop_list.append(currentPop)
+            # update the progress bar
+            self.__printProgressBar(j, fileData.shape[0], 'Loading Data:',
+                                    'Complete', 50)
 
         # save data into self.excelData
         self.excelData = pop_list
@@ -133,7 +234,7 @@ class NJTreeConstructor():
 
         Parse the excel data and show different information which may help the
         user find potential error in the provided excel files such as typos in
-        names or wrong sample number.
+        names or wrong sample count.
 
         Input:
             data: the data to be scanned in format [Pop()]
@@ -143,7 +244,7 @@ class NJTreeConstructor():
         unusual_pop = []  # pop with less than minLociCount (potential typo)
         minLociCount = 4  # minimum loci to trigger a warning
         loci_missing_pop = []  # pop with missing loci
-        non_int_allele = [] # "pop, locus, alelle" with non int allele value
+        non_int_allele = []  # "pop, locus, alelle" with non int allele value
 
         # Finds all the loci and their total count in the entire data
         for pop in data:
@@ -162,7 +263,7 @@ class NJTreeConstructor():
                             f'Sample {pop.name} at locus {locus} = "{allele}"')
         self.lociNames = lociNames.keys()
         self.lociCount = len(lociNames)
-        
+
         # Print the number of samples found
         tabs = '\t'
         print(f"{tabs}{numSamples} samples were found.")
@@ -181,7 +282,8 @@ class NJTreeConstructor():
                     loci_missing_pop.append(f"{pop.name} is missing locus " +
                                             locus)
         if loci_missing_pop:
-            # If more that 80% are missing a locus, this locus may be a typo
+            # If more that 80% of sample are missing a specific locus,
+            # this locus may be a typo
             if len(loci_missing_pop) <= len(data)*0.8:
                 print("\tWARNING:")
                 for message in loci_missing_pop:
@@ -195,8 +297,8 @@ class NJTreeConstructor():
                   f"than {minLociCount} loci:")
             for pop in unusual_pop:
                 print(f"{tabs}{pop}")
-                
-        # Print pop with non numerical allele values, raise error    
+
+        # Print pop with non numerical allele values, raise error
         if non_int_allele:
             print("\tERROR: The following samples have alleles with",
                   "non integer values:")
@@ -204,13 +306,34 @@ class NJTreeConstructor():
                 print(f"{tabs}{allele}")
             raise CancelException("Fix the allele values.")
 
+    def __printProgressBar(self, iteration, total, prefix='', suffix='',
+                           length=100, fill='█', printEnd="\r"):
+        """
+        Call in a loop to create terminal progress bar.
+
+        Input:
+            iteration   - Required  : current iteration (Int)
+            total       - Required  : total iterations (Int)
+            prefix      - Optional  : prefix string (Str)
+            suffix      - Optional  : suffix string (Str)
+            length      - Optional  : character length of bar (Int)
+            fill        - Optional  : bar fill character (Str)
+            printEnd    - Optional  : end character (e.g. "\r", "\r\n") (Str)
+        """
+        percent = f"{100 * (iteration / total):.1f}"
+        filledLength = int(length * iteration // total)
+        bar = fill * filledLength + '-' * (length - filledLength)
+        print(f'\r{prefix} |{bar}| {percent}% {suffix}', end=printEnd)
+        # Print New Line on Complete
+        if iteration == total:
+            print()
+
     def saveTreeFile(self):
         """
         Save the tree data into a tree file.
 
-        Input:
-            destination: file name and address for the tree file created by
-                this script.
+        Ask the user for the name and destination of tree file created by
+        this script.
         """
         print('\nEnter the destination for the tree file: ')
         dest_file_path = filedialog.asksaveasfilename(
@@ -219,7 +342,8 @@ class NJTreeConstructor():
             )
         if dest_file_path == '':
             raise CancelException("Save file cancelled")
-        if dest_file_path[-4:] == '.nwk':  # prevent saving a ".nwk.nwk" file
+        # In case of file overwriting, prevent saving a ".nwk.nwk" file
+        if dest_file_path[-4:] == '.nwk':
             dest_file_path = dest_file_path[:-4]
         write(njtree.tree, f"{dest_file_path}.nwk", 'newick')
         print(f'\tTree saved in {dest_file_path}.nwk')
@@ -228,16 +352,13 @@ class NJTreeConstructor():
         """
         Take the VNTR data and return a Neighbor-Joining tree.
 
-        Uses the Cavalli-Sforza chord distance formula to create a distance
-        matrix then the Biopython Phylo package to build the neighbor tree
+        The distance matrix can be calculated with either the Cavalli-Sforza
+        chord distance formula or the Nei's distance formula.
 
         Input:
-            data (optionnal): the VNTR data to be analysed. If none is passed,
-                the self.excelData from the instance is used.
-
-        Return
-        ------
-            Tree from the Biopython Phylo BaseTree module.
+            data (optionnal): the VNTR data to be analysed.
+                Instance data is used by default.
+            formula (optionnal): Cavalli (default) or Nei
         """
         # Verify if excel data is loaded / raise error otherwise
         if data is None and self.excelData:
@@ -246,7 +367,7 @@ class NJTreeConstructor():
             raise AttributeError('No data was loaded into instance.')
 
         # Calculate the distance matrix from the loaded data according to
-        # the asked formula
+        # the specified formula
         algo = None
         if formula == 'Cavalli':
             algo = self.__cdCavalliSforza
@@ -306,80 +427,155 @@ class NJTreeConstructor():
 
         Returns
         -------
-            DistanceMatrix from the Biopython Phylo TreeConstruction module
+            DistanceMatrix
 
         """
         dmatrix = DistanceMatrix([pop.name for pop in data])  # Initialize
         dsum = 0  # sum of (allele frequency popA * allele frequency popB)**0.5
         distance = 0  # genetic distance between 2 pop
-        DEBUG = False  # Print an output for debugging
-        num_pop = len(data)
-        current_pop = 1
+        num_pop = len(data)  # For visual progress
+        current_pop = 1  # For progress bar
 
-        def printx(*x):
-            if DEBUG:
-                print(*x)
-
+        # Initialize the progress bar at 0%
+        print()
+        self.__printProgressBar(0, num_pop, 'Calculating Distances:',
+                                'Complete', 50)
         # for each pop
         for pop in data:
-            printx('Current: ', pop)
-            print(f"Analysing Pop #{current_pop} of {num_pop}.({int((current_pop/num_pop)*100)}%)")
+            self.__printProgressBar(current_pop, num_pop,
+                                    'Calculating Distances:',
+                                    f'Complete ({current_pop}/{num_pop})',
+                                    50)
             current_pop += 1
             # compare to all previous samples excluding self
             # for versus in data:                   # Square matrix
             for versus in data[:data.index(pop)]:   # Lower triangular matrix
                 distance = 0  # initialize distance for pop vs versus
                 remainingLocus = self.lociCount
-                printx('\tversus:', versus)
                 # for each locus of pop
                 for locus in pop.loci:
                     remainingLocus -= 1
                     dsum = 0  # initialize sum for a single locus
-                    printx('\t'*2, locus)
                     # for each allele in locus of pop
                     for allele in pop.loci[locus]:
-                        printx('\t'*3, allele)
                         # Check if versus has current pop locus
                         if locus in versus.loci:
                             # Check if versus has same allele
                             if allele in versus.loci[locus]:
-                                printx('\t'*4, "present in", versus)
                                 # sum of sqrt of allele frequencies product
                                 dsum += (pop.frequency(locus)[allele] *
                                          versus.frequency(locus)[allele])**0.5
-                            else:
-                                printx('\t'*4, "absent in", versus)
-                        else:
-                            printx('\t'*4, versus, "doesnt have a", locus)
                     # Adding the distance for this locus
                     distance += algo(dsum)  # use the supplied formula fonction
                 # Adding distance for missing locus
                 distance += algo(0) * remainingLocus
                 # Place calculated distance between pop and versus in matrix
                 dmatrix[pop.name, versus.name] = distance
-            printx('---------')
-        printx(dmatrix)
-        printx('---------')
         return dmatrix
 
-    def __neighbor(self, matrix):
+    def __neighbor(self, distance_matrix):
         """
-        Apply the neighbor joining algo on a distance matrix.
+        Construct and return a Neighbor-Joining tree.
 
-        Input
-        -----
-            matrix : DistanceMatrix from the Biopython Phylo TreeConstruction
-                module
+        Input:
+            distance_matrix : a DistanceMatrix instance
 
         Returns
         -------
-            Tree from the Biopython Phylo BaseTree module
+            Bio.Phylo.BaseTree instance
         """
-        constructor = DistanceTreeConstructor()
-        print("Starting Neignbor.")
-        tree = constructor.nj(matrix)
-        print("Neighbor ended.")
-        return tree
+        print("\nStarting Neignbor.")
+
+        rptsum = lambda arr: np.repeat(np.sum(arr)/(np.size(arr)-2),
+                                       np.size(arr))
+        mapvsum = lambda mat: np.matrix([rptsum(line) for line in mat])
+        idxmin = lambda mat: np.unravel_index(np.argmin(mat), np.shape(mat))
+
+        # make a copy of the distance matrix to be used
+        dm = copy.deepcopy(distance_matrix)
+        tot_len = len(distance_matrix)  # for progress bar
+
+        # init terminal clades
+        clades = [BaseTree.Clade(None, name) for name in dm.names]
+
+        # init minimum index
+        min_i = 0
+        min_j = 0
+        inner_count = 0
+        # special cases for Minimum Alignment Matrices
+        if len(dm) == 1:
+            root = clades[0]
+
+            return BaseTree.Tree(root, rooted=False)
+        elif len(dm) == 2:
+            # minimum distance will always be [1,0]
+            min_i = 1
+            min_j = 0
+            clade1 = clades[min_i]
+            clade2 = clades[min_j]
+            clade1.branch_length = dm[min_i, min_j] / 2.0
+            clade2.branch_length = dm[min_i, min_j] - clade1.branch_length
+            inner_clade = BaseTree.Clade(None, "Inner")
+            inner_clade.clades.append(clade1)
+            inner_clade.clades.append(clade2)
+            clades[0] = inner_clade
+            root = clades[0]
+
+            return BaseTree.Tree(root, rooted=False)
+
+        # Initialize the progress bar at 0%
+        self.__printProgressBar(0, tot_len, 'Joining:', 'Complete', 50)
+        while len(dm) > 2:
+            current_pos = tot_len - len(dm)  # progress bar
+            self.__printProgressBar(current_pos+3, tot_len, 'Joining:',
+                                    f'Complete ({current_pos+3}/{tot_len})',
+                                    50)
+            # calculate nodeDist
+            SH = mapvsum(dm.matrix)
+            SV = SH.transpose()
+
+            # find minimum distance pair
+            Id = np.identity(len(dm.matrix))
+            M = dm.matrix + (np.multiply(Id, SH + SV) - SH - SV)
+            min_i, min_j = idxmin(M)
+            # create clade
+            clade1 = clades[min_i]
+            clade2 = clades[min_j]
+            inner_count += 1
+            inner_clade = BaseTree.Clade(None, "Inner" + str(inner_count))
+            inner_clade.clades.append(clade1)
+            inner_clade.clades.append(clade2)
+            # assign branch length
+            clade1.branch_length = (
+                dm[min_i, min_j] + SH[min_i, min_j] - SV[min_i, min_j]
+            ) / 2.0
+            clade2.branch_length = dm[min_i, min_j] - clade1.branch_length
+            # update node list
+            clades[min_j] = inner_clade
+            del clades[min_i]
+            # rebuild distance matrix,
+            # set the distances of new node at the index of min_j
+            u = [(dm[min_i, k] + dm[min_j, k] - dm[min_i, min_j]) / 2 for k in
+                 range(len(dm))]
+            dm.matrix[min_j] = u
+            dm.matrix[:, min_j] = np.matrix(u).transpose()
+            dm.names[min_j] = "Inner" + str(inner_count)
+            del dm[min_i]
+
+        # set the last clade as one of the child of the inner_clade
+        root = None
+        if clades[0] == inner_clade:
+            clades[0].branch_length = 0
+            clades[1].branch_length = dm[1, 0]
+            clades[0].clades.append(clades[1])
+            root = clades[0]
+        else:
+            clades[0].branch_length = dm[1, 0]
+            clades[1].branch_length = 0
+            clades[1].clades.append(clades[0])
+            root = clades[1]
+
+        return BaseTree.Tree(root, rooted=False)
 
     def alleleFrequency(self):
         """Print an allele frequency table."""
@@ -389,7 +585,7 @@ class NJTreeConstructor():
                     print(pop.name, locus, allele, round(freq, ndigits=4))
 
     def executeCommand(self):
-        """Excute the workflow, display on command console."""
+        """Excute the workflow."""
         try:
             # Load an excel file contain VNTR data
             self.loadExcelData()
@@ -407,10 +603,11 @@ class NJTreeConstructor():
         except CancelException as e:
             print(f'\n***{e.message}***')
             input('Press Enter to exit.')
-    
-    def executeGUI(self):
-        """Excute the workflow, display on GUI."""
-        pass
+
+    # def executeGUI(self):
+    #     """Excute the workflow, display on GUI."""
+    #     pass
+
 
 class Pop():
     """
@@ -418,15 +615,15 @@ class Pop():
 
     Attributes
     ----------
-            name: Name of sample in string format
-            loci: a dict of each locus name containing alleles values.
-                {loci_name:{allele_value:count,},}
+            name: Name of sample (str)
     """
 
     def __init__(self, name):
 
         self.name = name
-        self.loci = {}  # dict {locus:{allele:count,},}
+        # loci: a dict of each locus name containing alleles values.
+        # {str_loci_name : {int_allele_value : int_count, }, }
+        self.loci = {}
 
     def addLocus(self, locus: str, allele: int):
         """
@@ -471,7 +668,6 @@ class CancelException(BaseException):
 
 
 if __name__ == '__main__':
-    
+
     njtree = NJTreeConstructor()
     njtree.executeCommand()
-
