@@ -603,6 +603,9 @@ class NJTreeConstructor():
         except CancelException as e:
             print(f'\n***{e.message}***')
             input('Press Enter to exit.')
+        except Exception as e:
+            print(f'\n***Unexpected error: {e}***')
+            input('Press Enter to exit.')
 
     # def executeGUI(self):
     #     """Excute the workflow, display on GUI."""
