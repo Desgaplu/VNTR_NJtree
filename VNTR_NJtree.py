@@ -537,7 +537,7 @@ class NJTreeConstructor():
             # find minimum distance pair
             Id = np.identity(len(dm.matrix))
             M = dm.matrix + (np.multiply(Id, SH + SV) - SH - SV)
-            min_i, min_j = idxmin(M)
+            min_i, min_j = idxmin(M+Id)
             # create clade
             clade1 = clades[min_i]
             clade2 = clades[min_j]
@@ -545,6 +545,8 @@ class NJTreeConstructor():
             inner_clade = BaseTree.Clade(None, "Inner" + str(inner_count))
             inner_clade.clades.append(clade1)
             inner_clade.clades.append(clade2)
+            # print(f'Joining {clade1} with {clade2}')
+            # print(M)
             # assign branch length
             clade1.branch_length = (
                 dm[min_i, min_j] + SH[min_i, min_j] - SV[min_i, min_j]
@@ -565,11 +567,13 @@ class NJTreeConstructor():
         # set the last clade as one of the child of the inner_clade
         root = None
         if clades[0] == inner_clade:
+            # print(f'Case 1; Root is {clades[0]}, appending {clades[1]}')
             clades[0].branch_length = 0
             clades[1].branch_length = dm[1, 0]
             clades[0].clades.append(clades[1])
             root = clades[0]
         else:
+            # print(f'Case 2; Root is {clades[1]}, appending {clades[0]}')
             clades[0].branch_length = dm[1, 0]
             clades[1].branch_length = 0
             clades[1].clades.append(clades[0])
