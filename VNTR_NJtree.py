@@ -485,7 +485,7 @@ class NJTreeConstructor():
             Bio.Phylo.BaseTree instance
         """
         print("\nStarting Neignbor.")
-
+        # Formulas for the neighbor-joining matrix and minimum pair
         rptsum = lambda arr: np.repeat(np.sum(arr)/(np.size(arr)-2),
                                        np.size(arr))
         mapvsum = lambda mat: np.matrix([rptsum(line) for line in mat])
@@ -526,37 +526,43 @@ class NJTreeConstructor():
         # Initialize the progress bar at 0%
         self.__printProgressBar(0, tot_len, 'Joining:', 'Complete', 50)
         while len(dm) > 2:
-            current_pos = tot_len - len(dm)  # progress bar
+            # Progress bar update
+            current_pos = tot_len - len(dm)
             self.__printProgressBar(current_pos+3, tot_len, 'Joining:',
                                     f'Complete ({current_pos+3}/{tot_len})',
                                     50)
-            # calculate nodeDist
+            
+            # calculate prerequisites for neighbor-joining matrix
             SH = mapvsum(dm.matrix)
             SV = SH.transpose()
-
-            # find minimum distance pair
+            
+            # Build the neighbor-joining matrix M
             Id = np.identity(len(dm.matrix))
             M = dm.matrix + (np.multiply(Id, SH + SV) - SH - SV)
-            min_i, min_j = idxmin(M+Id)
-            # create clade
+            
+            # Find minimum distance pair
+            min_i, min_j = idxmin(M+Id) # +Id to prevent min_i == min_j
+            
+            # create clades with the minimum distance pair found
             clade1 = clades[min_i]
             clade2 = clades[min_j]
             inner_count += 1
             inner_clade = BaseTree.Clade(None, "Inner" + str(inner_count))
             inner_clade.clades.append(clade1)
             inner_clade.clades.append(clade2)
-            # print(f'Joining {clade1} with {clade2}')
-            # print(M)
-            # assign branch length
+
+            # assign branch lengths
             clade1.branch_length = (
                 dm[min_i, min_j] + SH[min_i, min_j] - SV[min_i, min_j]
             ) / 2.0
             clade2.branch_length = dm[min_i, min_j] - clade1.branch_length
-            # update node list
+            
+            # update clades list with new clade pair
             clades[min_j] = inner_clade
             del clades[min_i]
+            
             # rebuild distance matrix,
-            # set the distances of new node at the index of min_j
+            # set the distances of new clade at the index of min_j
             u = [(dm[min_i, k] + dm[min_j, k] - dm[min_i, min_j]) / 2 for k in
                  range(len(dm))]
             dm.matrix[min_j] = u
@@ -567,13 +573,11 @@ class NJTreeConstructor():
         # set the last clade as one of the child of the inner_clade
         root = None
         if clades[0] == inner_clade:
-            # print(f'Case 1; Root is {clades[0]}, appending {clades[1]}')
             clades[0].branch_length = 0
             clades[1].branch_length = dm[1, 0]
             clades[0].clades.append(clades[1])
             root = clades[0]
         else:
-            # print(f'Case 2; Root is {clades[1]}, appending {clades[0]}')
             clades[0].branch_length = dm[1, 0]
             clades[1].branch_length = 0
             clades[1].clades.append(clades[0])
@@ -628,6 +632,7 @@ class Pop():
     def __init__(self, name):
 
         self.name = name
+        
         # loci: a dict of each locus name containing alleles values.
         # {str_loci_name : {int_allele_value : int_count, }, }
         self.loci = {}
