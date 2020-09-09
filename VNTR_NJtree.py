@@ -31,6 +31,7 @@ import numpy as np
 import copy
 from Bio.Phylo import write  # Biopython
 from Bio.Phylo import BaseTree # Biopython
+from newickForMega import correct_newick
 
 # Initialise tkinter to enable the uses of filedialog
 root = tk.Tk()
@@ -258,7 +259,7 @@ class NJTreeConstructor():
                 else:
                     lociNames[locus] = 1
                 for allele in alleles.keys():
-                    if not allele.isdecimal():
+                    if not str(allele).isdecimal():
                         non_int_allele.append(
                             f'Sample {pop.name} at locus {locus} = "{allele}"')
         self.lociNames = lociNames.keys()
@@ -293,7 +294,7 @@ class NJTreeConstructor():
 
         # Print pop with less than minLociCount (potential typo in pop name)
         if unusual_pop:
-            print(f"\tWARNING: The following samples have less",
+            print("\tWARNING: The following samples have less",
                   f"than {minLociCount} loci:")
             for pop in unusual_pop:
                 print(f"{tabs}{pop}")
@@ -346,6 +347,9 @@ class NJTreeConstructor():
         if dest_file_path[-4:] == '.nwk':
             dest_file_path = dest_file_path[:-4]
         write(njtree.tree, f"{dest_file_path}.nwk", 'newick')
+        # Correct the apostrophes caharacter in final file
+        # for MEGA software usage (otherwise it raise error)
+        correct_newick(f"{dest_file_path}.nwk")
         print(f'\tTree saved in {dest_file_path}.nwk')
 
     def buildTree(self, data=None, formula='Cavalli'):
