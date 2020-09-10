@@ -28,10 +28,10 @@ import tkinter as tk  # using the open filedialog
 from tkinter import filedialog  # using the open filedialog
 from math import pi  # for CavalliSforza algo
 import numpy as np
-import copy
+import copy  # Copying np.matrix
 from Bio.Phylo import write  # Biopython
-from Bio.Phylo import BaseTree # Biopython
-from newickForMega import correct_newick
+from Bio.Phylo import BaseTree  # Biopython
+import re
 
 # Initialise tkinter to enable the uses of filedialog
 root = tk.Tk()
@@ -349,8 +349,36 @@ class NJTreeConstructor():
         write(njtree.tree, f"{dest_file_path}.nwk", 'newick')
         # Correct the apostrophes caharacter in final file
         # for MEGA software usage (otherwise it raise error)
-        correct_newick(f"{dest_file_path}.nwk")
+        self.correct_newick(f"{dest_file_path}.nwk")
         print(f'\tTree saved in {dest_file_path}.nwk')
+
+    def correct_newick(self, file_path):
+        """
+        Correct the Newick tree apostrophes.
+
+        Correct the Newick tree apostrophes from "\'" to "''" to be readable
+        with Mega (otherwise it raise a error). It overwrite the file with the
+        modified version.
+
+        Parameters
+        ----------
+        file_path : Str
+            The file path of the Newick tree file (*.nwk)
+
+        Returns
+        -------
+        None.
+
+        """
+        # open file
+        with open(file_path, mode='r') as f:
+            file = f.read()
+            # replace the  apostrophes
+            newfile = re.sub(r"\\'", "''", file)
+
+        # overwrite the file
+        with open(file_path, mode='w') as j:
+            j.write(newfile)
 
     def buildTree(self, data=None, formula='Cavalli'):
         """
@@ -535,18 +563,18 @@ class NJTreeConstructor():
             self.__printProgressBar(current_pos+3, tot_len, 'Joining:',
                                     f'Complete ({current_pos+3}/{tot_len})',
                                     50)
-            
+
             # calculate prerequisites for neighbor-joining matrix
             SH = mapvsum(dm.matrix)
             SV = SH.transpose()
-            
+
             # Build the neighbor-joining matrix M
             Id = np.identity(len(dm.matrix))
             M = dm.matrix + (np.multiply(Id, SH + SV) - SH - SV)
-            
+
             # Find minimum distance pair
-            min_i, min_j = idxmin(M+Id) # +Id to prevent min_i == min_j
-            
+            min_i, min_j = idxmin(M+Id)  # +Id to prevent min_i == min_j
+
             # create clades with the minimum distance pair found
             clade1 = clades[min_i]
             clade2 = clades[min_j]
@@ -560,11 +588,11 @@ class NJTreeConstructor():
                 dm[min_i, min_j] + SH[min_i, min_j] - SV[min_i, min_j]
             ) / 2.0
             clade2.branch_length = dm[min_i, min_j] - clade1.branch_length
-            
+
             # update clades list with new clade pair
             clades[min_j] = inner_clade
             del clades[min_i]
-            
+
             # rebuild distance matrix,
             # set the distances of new clade at the index of min_j
             u = [(dm[min_i, k] + dm[min_j, k] - dm[min_i, min_j]) / 2 for k in
@@ -636,7 +664,7 @@ class Pop():
     def __init__(self, name):
 
         self.name = name
-        
+
         # loci: a dict of each locus name containing alleles values.
         # {str_loci_name : {int_allele_value : int_count, }, }
         self.loci = {}
