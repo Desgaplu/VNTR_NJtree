@@ -516,7 +516,7 @@ class NJTreeConstructor():
         -------
             Bio.Phylo.BaseTree instance
         """
-        print("\nStarting Neignbor.")
+        print("\nStarting Neighbor-Joining.")
         # Formulas for the neighbor-joining matrix and minimum pair
         rptsum = lambda arr: np.repeat(np.sum(arr)/(np.size(arr)-2),
                                        np.size(arr))
@@ -635,6 +635,7 @@ class NJTreeConstructor():
                     "VNTR information considered incorrect by user.")
             else:
                 # Build a phylogenetic tree
+                # self.buildTree(formula='Nei')
                 self.buildTree(formula='Cavalli')
                 print('\nNeighbor-Joining tree constructed.')
                 # Save the tree in specified file
