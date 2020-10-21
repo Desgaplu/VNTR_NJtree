@@ -272,13 +272,23 @@ class NJTreeConstructor():
         # Print all the loci found and their count
         print(f"{tabs}{len(lociNames)} different loci were found:")
         tabs += '\t'
-        print(f"{tabs}Locus name\t\t Count")
+        print(f"{tabs}{'Locus name':<10}{'Count':>10}")
         for name, count in lociNames.items():
-            print(f"{tabs}{name:<8}{count:>10}")
+            if name is np.nan:
+                print(f"{tabs}{'MISSING':<10}{count:>10}")
+            else:
+                print(f"{tabs}{name:<10}{count:>10}")
 
         # Print pop with one or more missing loci
+        # Raise a error if a pop name or loci name is empty
         for pop in data:
-            for locus in self.lociNames:
+            if pop.name is np.nan:
+                print("\tERROR: One or more samples have no sample name.")
+                raise CancelException("Add names or delete empty lines.")
+            for locus in self.lociNames: 
+                if locus is np.nan:
+                    print("\tERROR: One or more samples have loci without a name.")
+                    raise CancelException("Add names or delete empty lines.")
                 if locus not in pop.loci:
                     loci_missing_pop.append(f"{pop.name} is missing locus " +
                                             locus)
