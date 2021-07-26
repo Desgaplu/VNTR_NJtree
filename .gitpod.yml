@@ -6,6 +6,8 @@ tasks:
       python -m pip install pandas
       python -m pip install numpy
       python -m pip install xlrd
+      python -m pip install copy
+      python -m pip install tkinter
     command: echo 'start script'
 
 # List the ports to expose. Learn more https://www.gitpod.io/docs/config-ports/
