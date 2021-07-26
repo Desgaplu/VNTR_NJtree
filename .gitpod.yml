@@ -1,6 +1,6 @@
 # List the start up tasks. Learn more https://www.gitpod.io/docs/config-start-tasks/
 tasks:
-  - init: echo 'init script' # runs during prebuild
+  - init: |
       python -m pip install --upgrade pip
       python -m pip install biopython
       python -m pip install pandas
