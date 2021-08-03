@@ -243,7 +243,7 @@ class NJTreeConstructor():
         lociNames = {}  # {key=Locus name: value=Locus count}
         numSamples = len(data)
         unusual_pop = []  # pop with less than minLociCount (potential typo)
-        minLociCount = 4  # minimum loci to trigger a warning
+        minLociCount = 3  # minimum loci to trigger a warning
         loci_missing_pop = []  # pop with missing loci
         non_int_allele = []  # "pop, locus, alelle" with non int allele value
 
