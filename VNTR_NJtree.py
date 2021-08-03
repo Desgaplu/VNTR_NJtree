@@ -658,10 +658,6 @@ class NJTreeConstructor():
             print(f'\n***Unexpected error: {e}***')
             input('Press Enter to exit.')
 
-    # def executeGUI(self):
-    #     """Excute the workflow, display on GUI."""
-    #     pass
-
 
 class Pop():
     """
